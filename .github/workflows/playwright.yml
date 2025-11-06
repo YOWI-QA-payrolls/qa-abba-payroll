@@ -5,6 +5,7 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
+  workflow_dispatch:  # optional manual trigger
 
 jobs:
   test:
@@ -12,12 +13,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Checkout repo
       - uses: actions/checkout@v4
 
+      # Setup Node.js
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
 
+      # Cache npm dependencies
       - name: Cache npm
         uses: actions/cache@v4
         with:
@@ -27,9 +31,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-npm-
 
+      # Install dependencies
       - name: Install dependencies
         run: npm ci
 
+      # Cache Playwright browsers
       - name: Cache Playwright Browsers
         id: playwright-cache
         uses: actions/cache@v4
@@ -40,13 +46,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-playwright-browsers-
 
+      # Install Playwright browsers (only if cache miss)
       - name: Install Playwright Browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps
 
+      # Run Playwright tests (JSON + HTML report)
       - name: Run Playwright tests (JSON + HTML report)
-        run: npx playwright test --reporter=json,html
+        run: |
+          mkdir -p playwright-report
+          npx playwright test --reporter=json,html > playwright-report/test-results.json
 
+      # Upload HTML report to GitHub Actions
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
@@ -54,12 +65,12 @@ jobs:
           path: playwright-report/
           retention-days: 30
 
-      # 🔹 Upload Playwright results to Testiny
+      # Upload Playwright results to Testiny
       - name: Upload Playwright results to Testiny
-        if: ${{ always() }}  # ensures upload runs even if tests fail
+        if: ${{ always() }} # run even if tests fail
         env:
           TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
-          TESTINY_PROJECT_ID: ABPRL           
+          TESTINY_PROJECT_ID: ABPRL
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_BRANCH: ${{ github.ref_name }}
@@ -67,10 +78,9 @@ jobs:
           GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           echo "Uploading Playwright results to Testiny..."
-          # Run Testiny CLI — safely ignore failure to not break CI
           npx @testiny/cli automation \
             --project "$TESTINY_PROJECT_ID" \
-            --source "playwright-e2e" \
+            --source "playwright-tests" \
             --field-values run_id=$GITHUB_RUN_ID,sha=$GITHUB_SHA,branch=$GITHUB_BRANCH,repo=$GITHUB_REPO,run_url=$GITHUB_RUN_URL \
             --run-fields run_id,sha,branch \
             --playwright playwright-report/test-results.json || echo "⚠️ Testiny upload failed, continuing pipeline."
