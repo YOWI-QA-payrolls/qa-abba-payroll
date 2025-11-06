@@ -1,48 +1,76 @@
 name: Playwright Tests
+
 on:
   push:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
+
 jobs:
   test:
     timeout-minutes: 60
     runs-on: ubuntu-latest
+
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: lts/*
-    - name: Cache npm
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.npm
-        key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-npm-
+      - uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: npm ci
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
 
-    - name: Cache Playwright Browsers
-      id: playwright-cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cache/ms-playwright
-        key: ${{ runner.os }}-playwright-browsers-${{ hashFiles('**/package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-playwright-browsers-
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
 
-    - name: Install Playwright Browsers
-      if: steps.playwright-cache.outputs.cache-hit != 'true'
-      run: npx playwright install --with-deps
-    - name: Run Playwright tests
-      run: npx playwright test
-    - uses: actions/upload-artifact@v4
-      if: ${{ !cancelled() }}
-      with:
-        name: playwright-report
-        path: playwright-report/
-        retention-days: 30
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright Browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-browsers-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-browsers-
+
+      - name: Install Playwright Browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright tests (JSON + HTML report)
+        run: npx playwright test --reporter=json,html
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+
+      # 🔹 Upload Playwright results to Testiny
+      - name: Upload Playwright results to Testiny
+        if: ${{ always() }}  # ensures upload runs even if tests fail
+        env:
+          TESTINY_API_KEY: ${{ secrets.TESTINY_API_KEY }}
+          TESTINY_PROJECT_ID: ABPRL           
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_BRANCH: ${{ github.ref_name }}
+          GITHUB_REPO: ${{ github.repository }}
+          GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          echo "Uploading Playwright results to Testiny..."
+          # Run Testiny CLI — safely ignore failure to not break CI
+          npx @testiny/cli automation \
+            --project "$TESTINY_PROJECT_ID" \
+            --source "playwright-e2e" \
+            --field-values run_id=$GITHUB_RUN_ID,sha=$GITHUB_SHA,branch=$GITHUB_BRANCH,repo=$GITHUB_REPO,run_url=$GITHUB_RUN_URL \
+            --run-fields run_id,sha,branch \
+            --playwright playwright-report/test-results.json || echo "⚠️ Testiny upload failed, continuing pipeline."
