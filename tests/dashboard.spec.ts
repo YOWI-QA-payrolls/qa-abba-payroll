@@ -5,8 +5,8 @@ const DEFAULT_PASSWORD = 'CDNC19960308.nico';
 
 async function loginpayroll(page, email = DEFAULT_EMAIL, password = DEFAULT_PASSWORD) {
   await page.goto('https://theabbapayroll.com/login');
-  await page.getByRole('textbox', { name: 'Email Address' }).click();
-  await page.getByRole('textbox', { name: 'Email Address' }).fill(email);
+  await page.getByRole('textbox', { name: 'Email' }).click();
+  await page.getByRole('textbox', { name: 'Email' }).fill(email);
   // Focus password and fill it directly
   await page.getByRole('textbox', { name: 'Password' }).click();
   await page.getByRole('textbox', { name: 'Password' }).fill(password);
@@ -108,3 +108,5 @@ test('Verify Dashboard By Employment Type is visible', async ({ page }) => {
   await loginpayroll(page);
   await expect(page.getByRole('heading', { name: 'By Employment Type' })).toBeVisible();
 });
+
+// I added edit here
